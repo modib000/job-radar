@@ -1,0 +1,58 @@
+name: Daily refresh
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Pull and score today's leads
+        run: node scripts/refresh.mjs
+        env:
+          RADAR_PASSPHRASE: ${{ secrets.RADAR_PASSPHRASE }}
+          APOLLO_API_KEY: ${{ secrets.APOLLO_API_KEY }}
+          TWITTERAPI_KEY: ${{ secrets.TWITTERAPI_KEY }}
+          NEYNAR_API_KEY: ${{ secrets.NEYNAR_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save today's data
+        run: |
+          git config user.name "bd-radar-bot"
+          git config user.email "bd-radar-bot@users.noreply.github.com"
+          git add data/
+          git commit -m "Daily refresh $(date -u +%F)" || echo "No changes"
+          git push
+
+      - name: Build site
+        run: |
+          mkdir -p _site/data
+          cp -r site/* _site/
+          cp data/*.json _site/data/ 2>/dev/null || true
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
