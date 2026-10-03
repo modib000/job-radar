@@ -1,0 +1,139 @@
+{
+  "_note": "Settings for Job Radar. Edit freely on GitHub.",
+  "demo": false,
+  "defillama": false,
+  "newsFeeds": [
+    "https://sifted.eu/feed",
+    "https://www.uktech.news/feed",
+    "https://techcrunch.com/category/fintech/feed/",
+    "https://tech.eu/feed/",
+    "https://www.finextra.com/rss/headlines.aspx"
+  ],
+  "fundingLookbackDays": 30,
+  "vcBoards": [
+    {
+      "name": "Seedcamp",
+      "url": "https://jobs.seedcamp.com"
+    },
+    {
+      "name": "Balderton",
+      "url": "https://jobs.balderton.com"
+    },
+    {
+      "name": "LocalGlobe",
+      "url": "https://jobs.localglobe.vc"
+    },
+    {
+      "name": "Notion Capital",
+      "url": "https://jobs.notion.vc"
+    },
+    {
+      "name": "Frontline",
+      "url": "https://jobs.frontline.vc"
+    },
+    {
+      "name": "Octopus Ventures",
+      "url": "https://jobs.octopusventures.com"
+    },
+    {
+      "name": "Index Ventures",
+      "url": "https://jobs.indexventures.com"
+    },
+    {
+      "name": "Atomico",
+      "url": "https://jobs.atomico.com"
+    },
+    {
+      "name": "Accel",
+      "url": "https://jobs.accel.com"
+    },
+    {
+      "name": "Point Nine",
+      "url": "https://jobs.pointnine.com"
+    }
+  ],
+  "jobSites": [],
+  "telegramChannels": [],
+  "xQueries": [],
+  "xAccounts": [],
+  "xSignalQueries": [],
+  "github": {
+    "enabled": false
+  },
+  "farcasterQueries": [],
+  "apollo": {
+    "titles": [
+      "VP Sales",
+      "Head of Sales",
+      "Sales Director",
+      "Head of Business Development",
+      "Head of Sales Development",
+      "SDR Manager",
+      "Talent Acquisition"
+    ],
+    "dailyLimit": 5,
+    "minScore": 15
+  },
+  "market": {
+    "include": [
+      "london",
+      "united kingdom",
+      "uk",
+      "england",
+      "remote - uk",
+      "remote uk",
+      "emea",
+      "europe"
+    ],
+    "exclude": []
+  },
+  "locationBoost": {
+    "strong": [
+      "london",
+      "united kingdom",
+      "uk",
+      "england"
+    ],
+    "some": [
+      "remote",
+      "europe",
+      "emea"
+    ]
+  },
+  "sectorFit": {
+    "Fintech": 3,
+    "Payments": 3,
+    "Banking tech": 3,
+    "AI": 3,
+    "Legal tech": 3,
+    "RegTech": 2,
+    "Data & analytics": 2,
+    "Stablecoins": 2,
+    "SaaS": 2,
+    "Security": 2,
+    "HR tech": 1
+  },
+  "excludeKeywords": [
+    "casino",
+    "betting",
+    "gambling",
+    "igaming",
+    "sportsbook",
+    "poker",
+    "lottery",
+    "bingo",
+    "memecoin",
+    "meme coin",
+    "nft",
+    "token",
+    "defi",
+    "dao",
+    "web3",
+    "crypto exchange",
+    "airdrop",
+    "blockchain game",
+    "gamefi",
+    "bet365",
+    "betfair"
+  ]
+}
