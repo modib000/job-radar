@@ -2,6 +2,37 @@
   "_note": "Settings for Job Radar. Edit freely on GitHub.",
   "demo": false,
   "defillama": false,
+  "keepAbroad": true,
+  "ukBoards": {
+    "searchTerms": [
+      "sales development representative",
+      "business development representative",
+      "SDR",
+      "BDR",
+      "account executive"
+    ],
+    "location": "",
+    "maxDaysOld": 21,
+    "requireTech": true,
+    "ycombinator": true,
+    "skipEmployers": [
+      "recruit",
+      "resourcing",
+      "personnel",
+      "staffing",
+      "talent solutions",
+      "headhunt",
+      "search partners",
+      "executive search",
+      "hays",
+      "michael page",
+      "robert half",
+      "reed specialist",
+      "randstad",
+      "adecco",
+      "harvey nash"
+    ]
+  },
   "newsFeeds": [
     "https://sifted.eu/feed",
     "https://www.uktech.news/feed",

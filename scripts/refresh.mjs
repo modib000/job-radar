@@ -131,7 +131,9 @@ const fmtSalary = (min, max, cur, period) => {
   if (!min && !max) return "";
   const k = v => v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`;
   const per = /hour/i.test(period || "") ? " an hour" : "";
-  return `${(cur || "").toUpperCase()} ${min && max && min !== max ? `${k(min)} to ${k(max)}` : k(min || max)}${per}`.trim();
+  const sym = { GBP: "£", USD: "$", EUR: "€" }[(cur || "").toUpperCase()];
+  const v = x => sym ? `${sym}${k(x)}` : k(x);
+  return `${sym ? "" : (cur || "").toUpperCase() + " "}${min && max && min !== max ? `${v(min)} to ${v(max)}` : v(min || max)}${per}`.trim();
 };
 const xmlTag = (b, tag) => { const m = b.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i")); return m ? strip(m[1].replace(/<!\[CDATA\[|\]\]>/g, "")) : ""; };
 const ATS = {
@@ -243,6 +245,92 @@ async function jobSites(sites, report) {
       report.push(`${site.name}: ${items.length} listings, ${eng.length} engineering`);
     } catch (e) { report.push(`${site.name}: ${e.message}`); }
   });
+  return out;
+}
+
+// ---------- where is the role ----------
+const UK_RE = /london|united kingdom|\buk\b|\bgb\b|great britain|england|scotland|wales|northern ireland|manchester|edinburgh|bristol|leeds|birmingham|cambridge|oxford|glasgow|belfast|reading|brighton|liverpool|nottingham|sheffield|newcastle|cardiff|milton keynes|guildford/;
+const FOREIGN_RE = /\b(usa|united states|u\.s\.|us|americas|north america|canada|new york|nyc|san francisco|bay area|austin|chicago|boston|seattle|denver|atlanta|miami|los angeles|toronto|vancouver|singapore|sydney|melbourne|india|bangalore|bengaluru|tokyo|dubai|uae|brazil|mexico|hong kong|apac|latam|israel|tel aviv|germany|berlin|munich|france|paris|spain|madrid|barcelona|netherlands|amsterdam|ireland|dublin|poland|warsaw|portugal|lisbon|switzerland|zurich|sweden|stockholm|denmark|copenhagen|italy|milan|austria|vienna|ca|ny|tx|ma|wa|co|il|ga|fl)\b/;
+function placeRole(loc, title, desc) {
+  const l = `${loc || ""} ${title || ""}`.toLowerCase(), d = String(desc || "").toLowerCase();
+  const remote = /\bremote\b|work from home|\bwfh\b|anywhere/.test(l) || /fully remote|remote[- ]first/.test(d);
+  const hybrid = /hybrid/.test(l) || /\bhybrid\b/.test(d);
+  const uk = UK_RE.test(l), foreign = FOREIGN_RE.test(l), europe = /emea|europe|\beu\b/.test(l);
+  let region;
+  if (uk) region = /london/.test(l) ? "london" : "uk";
+  else if (remote && (europe || !foreign)) region = "remote";
+  else if (!String(loc || "").trim()) region = "unknown";
+  else region = "abroad";
+  return { region, workplace: remote ? "Remote" : hybrid ? "Hybrid" : (String(loc || "").trim() ? "On site" : "") };
+}
+
+// ---------- UK job boards (Adzuna, Reed) and Y Combinator ----------
+const TECH = /\b(saas|software|fintech|platform|ai|artificial intelligence|machine learning|tech|technology|b2b|cloud|data|payments|startup|scale-?up|series [a-d]|api|cyber|security|legal tech|regtech|insurtech|proptech|crm|enterprise software|stablecoin)\b/i;
+let AGENCY = [];
+const isAgency = n => AGENCY.some(w => String(n || "").toLowerCase().includes(w));
+const ukDate = d => { const m = String(d || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : d; };
+async function ukBoards(cfg, report) {
+  const out = [], B = cfg.ukBoards || {}, terms = B.searchTerms || [], where = B.location || "", maxDays = B.maxDaysOld || 14;
+  const keep = (company, title, text) => company && title && isEng(title) && !isAgency(company) && !excluded(`${company} ${title} ${text}`) && (B.requireTech === false || TECH.test(`${title} ${company} ${text}`));
+  // Adzuna
+  const aid = process.env.ADZUNA_APP_ID, akey = process.env.ADZUNA_APP_KEY;
+  if (aid && akey) {
+    let n = 0, seen = 0;
+    for (const t of terms) {
+      try {
+        const j = await getJSON(`https://api.adzuna.com/v1/api/jobs/gb/search/1?app_id=${aid}&app_key=${akey}&what_phrase=${encodeURIComponent(t)}${where ? `&where=${encodeURIComponent(where)}&distance=25` : ""}&max_days_old=${maxDays}&results_per_page=50&content-type=application/json`);
+        for (const x of j.results || []) {
+          seen++;
+          const company = x.company && x.company.display_name, desc = strip(x.description || "");
+          if (!keep(company, x.title, desc)) continue;
+          out.push({ company: company.trim(), title: strip(x.title), url: x.redirect_url, location: (x.location && x.location.display_name) || where || "UK", posted: x.created, salary: x.salary_min ? fmtSalary(Math.round(x.salary_min), Math.round(x.salary_max || x.salary_min), "GBP", "year") : "", desc, site: "Adzuna" });
+          n++;
+        }
+      } catch (e) { report.push(`Adzuna "${t}": ${e.message}`); }
+    }
+    report.push(`Adzuna: ${seen} listings checked, ${n} tech sales roles kept`);
+  } else report.push("Adzuna: add ADZUNA_APP_ID and ADZUNA_APP_KEY secrets to switch on");
+  // Reed
+  const rkey = process.env.REED_API_KEY;
+  if (rkey) {
+    let n = 0, seen = 0;
+    const auth = "Basic " + Buffer.from(rkey + ":").toString("base64");
+    for (const t of terms) {
+      try {
+        const j = await getJSON(`https://www.reed.co.uk/api/1.0/search?keywords=${encodeURIComponent(t)}${where ? `&locationName=${encodeURIComponent(where)}&distanceFromLocation=15` : ""}&resultsToTake=100`, { headers: { Authorization: auth } });
+        for (const x of j.results || []) {
+          seen++;
+          const posted = ukDate(x.date);
+          if (posted && daysSince(posted) > maxDays) continue;
+          if (!keep(x.employerName, x.jobTitle, x.jobDescription || "")) continue;
+          out.push({ company: String(x.employerName).trim(), title: strip(x.jobTitle), url: x.jobUrl, location: x.locationName || where || "UK", posted, salary: x.minimumSalary ? fmtSalary(Math.round(x.minimumSalary), Math.round(x.maximumSalary || x.minimumSalary), "GBP", "year") : "", desc: strip(x.jobDescription || "").slice(0, 600), site: "Reed" });
+          n++;
+        }
+      } catch (e) { report.push(`Reed "${t}": ${e.message}`); }
+    }
+    report.push(`Reed: ${seen} listings checked, ${n} tech sales roles kept`);
+  } else report.push("Reed: add a REED_API_KEY secret to switch on");
+  // Y Combinator startup jobs (public listing pages)
+  if (B.ycombinator !== false) {
+    let n = 0;
+    for (const path of ["sales"]) {
+      try {
+        const html = await getText(`https://www.ycombinator.com/jobs/role/${path}`);
+        const dp = html.match(/data-page="([^"]+)"/);
+        const json = dp ? JSON.parse(dp[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#39;/g, "'")) : null;
+        const found = [];
+        const walk = (o, d = 0) => { if (!o || typeof o !== "object" || d > 10) return; if (Array.isArray(o)) { o.forEach(x => walk(x, d + 1)); return; } if (o.title && (o.companyName || (o.company && o.company.name))) found.push(o); for (const k in o) walk(o[k], d + 1); };
+        walk(json);
+        for (const x of found) {
+          const company = x.companyName || x.company.name, loc = x.location || x.locations || "";
+          if (!isEng(x.title) || !inMarket(Array.isArray(loc) ? loc.join(", ") : loc)) continue;
+          out.push({ company, title: x.title, url: x.url ? (x.url.startsWith("http") ? x.url : "https://www.ycombinator.com" + x.url) : `https://www.ycombinator.com/jobs/role/${path}`, location: Array.isArray(loc) ? loc.join(", ") : loc, posted: x.createdAt || x.lastActive || null, salary: x.salaryRange || "", site: "Y Combinator" });
+          n++;
+        }
+        report.push(`Y Combinator: ${found.length} listings read, ${n} UK or remote sales roles`);
+      } catch (e) { report.push(`Y Combinator: ${e.message}`); }
+    }
+  }
   return out;
 }
 
@@ -604,9 +692,10 @@ async function main() {
 
   // 3c. crypto job sites
   const siteRep = [];
-  const siteJobs = await jobSites(cfg.jobSites || [], siteRep);
+  AGENCY = ((cfg.ukBoards && cfg.ukBoards.skipEmployers) || []).map(w => w.toLowerCase());
+  const siteJobs = [...await jobSites(cfg.jobSites || [], siteRep), ...await ukBoards(cfg, siteRep)];
   const siteByCo = {};
-  for (const j of siteJobs) { const k = norm(j.company); if (!k) continue; (siteByCo[k] = siteByCo[k] || { name: j.company, jobs: [], sites: new Set() }); siteByCo[k].jobs.push(j); siteByCo[k].sites.add(j.site); }
+  for (const j of siteJobs) { const k = norm(j.company); if (!k || excluded(j.company)) continue; (siteByCo[k] = siteByCo[k] || { name: j.company, jobs: [], sites: new Set() }); siteByCo[k].jobs.push(j); siteByCo[k].sites.add(j.site); }
   sources.sites = { ok: siteJobs.length > 0, count: Object.keys(siteByCo).length, notes: siteRep };
 
   // 4. job boards
@@ -664,12 +753,13 @@ async function main() {
   const companies = [];
   for (const u of list) {
     const k = norm(u.name);
-    const roles = (u.jobs || []).filter(j => inMarket(j.location)).map(j => {
+    const roles = (u.jobs || []).filter(j => cfg.keepAbroad !== false || inMarket(j.location)).map(j => {
       const id = j.url || `${u.name}|${j.title}`;
       const posted = j.posted && !isNaN(new Date(j.posted)) ? new Date(j.posted).toISOString().slice(0, 10) : null;
       if (!H.roles[id]) H.roles[id] = posted && posted <= TODAY ? posted : TODAY;
       const first = H.roles[id];
-      return { id, title: j.title.trim(), url: j.url, location: j.location || "", firstSeen: first, age: daysSince(first), disc: discipline(j.title), salary: j.salary || "", via: j.vc || j.site || "" };
+      const pl = placeRole(j.location, j.title, j.desc);
+      return { id, title: j.title.trim(), url: j.url, location: j.location || "", region: pl.region, workplace: pl.workplace, firstSeen: first, age: daysSince(first), disc: discipline(j.title), salary: j.salary || "", via: j.vc || j.site || "" };
     }).sort((a, b) => a.age - b.age);
     const funding = fundBy[k] || null;
     const soc = social.filter(s => s.company && norm(s.company) === k);
@@ -707,7 +797,7 @@ async function main() {
     const LB = cfg.locationBoost || {};
     const locText = roles.map(r => r.location).join(" | ").toLowerCase();
     const hasAny = arr => (arr || []).some(w => new RegExp(`\\b${w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(locText));
-    c.loc = roles.some(r => ukRole(r.location)) ? "strong" : (hasAny(LB.strong) ? "strong" : hasAny(LB.some) ? "some" : "");
+    c.loc = roles.some(r => r.region === "london" || r.region === "uk") ? "strong" : roles.some(r => r.region === "remote" || r.region === "unknown") ? "some" : "";
     // remember companies surfaced outside the watchlist
     if (!u.watch) H.discovered[k] = { name: u.name, domain: u.domain || "", x: u.x || "", since: (H.discovered[k] && H.discovered[k].since) || TODAY, last: TODAY };
     c.newRoles = roles.filter(r => r.firstSeen === TODAY).length;

@@ -57,6 +57,15 @@ const isActive = a => a.stage !== "closed" && a.stage !== "offer";
 // role fit: start from the company score, then adjust for this role's own freshness and level
 const fresh = a => a <= 2 ? 4 : a <= 7 ? 3 : a <= 14 ? 1 : 0;
 const levelPts = r => r.disc.includes("Senior AE") ? 2 : 5;
+const regionPts = r => ({ london: 3, uk: 3, remote: 2, unknown: 2, abroad: 0 })[r.region || "unknown"];
+const companyLocPts = c => c.loc === "strong" ? 3 : c.loc === "some" ? 2 : 0;
+const ukFriendly = r => r.region !== "abroad";
+const flexible = r => ukFriendly(r) && (r.workplace === "Remote" || r.workplace === "Hybrid");
+function placeLabel(r) {
+  const w = r.workplace && r.workplace !== "On site" ? ` · ${r.workplace}` : "";
+  if (r.region === "abroad") return `${r.location || "Abroad"} · Abroad${w}`;
+  return `${r.location || "Location not listed"}${w}`;
+}
 function start(d) {
   DATA = d;
   companies = d.companies;
@@ -66,7 +75,7 @@ function start(d) {
     const newest = Math.min(...c.roles.map(r => r.age));
     const anyFit = c.roles.some(r => !r.disc.includes("Senior AE"));
     for (const r of c.roles) {
-      const score = Math.max(0, Math.min(20, c.score - fresh(newest) + fresh(r.age) - (anyFit ? 5 : 2) + levelPts(r)));
+      const score = Math.max(0, Math.min(20, c.score - fresh(newest) + fresh(r.age) - (anyFit ? 5 : 2) + levelPts(r) - companyLocPts(c) + regionPts(r)));
       roles.push({ ...r, id: r.id || r.url, company: c.name, c, score, isNew: r.firstSeen === d.date });
     }
   }
@@ -80,7 +89,8 @@ function start(d) {
 }
 
 // ---------- roles ----------
-let type = "all", sort = "fit", q = "";
+let type = "all", sort = "fit", q = "", place = "uk";
+document.querySelectorAll("#placeSeg button").forEach(b => b.onclick = () => { place = b.dataset.place; document.querySelectorAll("#placeSeg button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderRoles(); });
 document.querySelectorAll("#typeSeg button").forEach(b => b.onclick = () => { type = b.dataset.type; document.querySelectorAll("#typeSeg button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderRoles(); });
 document.querySelectorAll("#sortSeg button").forEach(b => b.onclick = () => { sort = b.dataset.sort; document.querySelectorAll("#sortSeg button").forEach(x => x.setAttribute("aria-pressed", x === b)); renderRoles(); });
 $("q").oninput = e => { q = e.target.value.toLowerCase(); if (!$("v-roles").classList.contains("on")) go("roles"); renderRoles(); };
@@ -89,14 +99,15 @@ function renderRoles() {
   if (!DATA) return;
   let r = openRoles();
   if (type !== "all") r = r.filter(x => x.disc.includes(type));
+  if (place === "uk") r = r.filter(ukFriendly); else if (place === "flex") r = r.filter(flexible);
   if (q) r = r.filter(x => `${x.title} ${x.company} ${x.location} ${x.c.vertical}`.toLowerCase().includes(q));
   r.sort(sort === "new" ? (a, b) => a.age - b.age || b.score - a.score : (a, b) => b.score - a.score || a.age - b.age);
-  const all = openRoles(), nw = all.filter(x => x.isNew).length;
+  const all = openRoles().filter(ukFriendly), nw = all.filter(x => x.isNew).length, abroad = openRoles().length - all.length;
   const active = Object.values(APPS).filter(isActive).length, due = Object.values(APPS).filter(a => isActive(a) && a.next && dayDiff(a.next) <= 0).length;
-  $("subline").textContent = `${all.length} open roles, ${nw} new today. ${active} application${active === 1 ? "" : "s"} in progress${due ? `, ${due} follow up${due === 1 ? "" : "s"} due` : ""}.`;
+  $("subline").textContent = `${all.length} open roles in the UK or remote${abroad ? ` (plus ${abroad} abroad)` : ""}, ${nw} new today. ${active} application${active === 1 ? "" : "s"} in progress${due ? `, ${due} follow up${due === 1 ? "" : "s"} due` : ""}.`;
   $("c-roles").textContent = nw || "";
-  $("rlist").innerHTML = r.length ? r.slice(0, 250).map(x => `<div class="rrow" data-role="${esc(x.id)}">${av(x.company)}<div class="meta"><b>${x.isNew ? '<span class="newdot" title="New today"></span>' : ""}${esc(x.title)}</b><span>${esc(x.company)} · ${esc(x.location || "Location not listed")}${x.salary ? ` · ${esc(x.salary)}` : ""}${(CO[x.company] || {}).culture === "mixed" ? " · mixed culture" : (CO[x.company] || {}).culture === "good" ? " · good culture" : ""}</span></div><div class="when">${ago(x.age)}</div><div class="fit ${x.score >= 15 ? "hi" : ""}" title="Fit score out of 20">${x.score}</div><div class="ract"><a href="${esc(x.url)}" target="_blank" rel="noopener" data-stop>Apply ↗</a><button class="go" data-applied>Applied</button><button class="x" data-hide title="Not interested">✕</button></div></div>`).join("")
-    : `<div class="qempty">${q || type !== "all" ? "Nothing matches. Try another search." : "You're all caught up. New roles land here every morning."}</div>`;
+  $("rlist").innerHTML = r.length ? r.slice(0, 250).map(x => `<div class="rrow" data-role="${esc(x.id)}">${av(x.company)}<div class="meta"><b>${x.isNew ? '<span class="newdot" title="New today"></span>' : ""}${esc(x.title)}</b><span>${esc(x.company)} · ${esc(placeLabel(x))}${x.salary ? ` · ${esc(x.salary)}` : ""}${(CO[x.company] || {}).culture === "mixed" ? " · mixed culture" : (CO[x.company] || {}).culture === "good" ? " · good culture" : ""}</span></div><div class="when">${ago(x.age)}</div><div class="fit ${x.score >= 15 ? "hi" : ""}" title="Fit score out of 20">${x.score}</div><div class="ract"><a href="${esc(x.url)}" target="_blank" rel="noopener" data-stop>Apply ↗</a><button class="go" data-applied>Applied</button><button class="x" data-hide title="Not interested">✕</button></div></div>`).join("")
+    : `<div class="qempty">${q || type !== "all" || place !== "all" ? "Nothing matches. Try another search or location." : "You're all caught up. New roles land here every morning."}</div>`;
   const raised = companies.filter(c => !c.roles.length && c.funding && (CO[c.name] || {}).culture !== "avoid").sort((a, b) => b.score - a.score);
   $("raisedBox").style.display = raised.length ? "" : "none";
   $("raisedSum").textContent = `Just raised, no sales roles posted yet (${raised.length})`;
@@ -174,7 +185,7 @@ function wireCompany(name, redraw) {
   const n = $("cnote"); if (n) n.oninput = e => { (CO[name] = CO[name] || {}).cultureNote = e.target.value; save(); };
 }
 function openRole(r) {
-  showD(head(r.title, `${esc(r.company)} · ${esc(r.location || "Location not listed")}`) + `<div class="dbody">
+  showD(head(r.title, `${esc(r.company)} · ${esc(placeLabel(r))}`) + `<div class="dbody">
     <div class="scorebox"><div class="ring" style="--v:${r.score * 5}"><div>${r.score}</div></div><div><b>${r.score >= 15 ? "Great fit" : r.score >= 11 ? "Good fit" : "Worth a look"}</b><span>Posted ${ago(r.age).toLowerCase()}${r.salary ? ` · ${esc(r.salary)}` : ""}</span></div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn primary" href="${esc(r.url)}" target="_blank" rel="noopener">Open the job ad ↗</a><button class="btn tonal" id="d-applied">I've applied</button><button class="btn ghost" id="d-hide">Not interested</button></div>
     ${companyBits(r.c, r.company)}
@@ -233,9 +244,10 @@ $("pitch").oninput = e => store.set(PFX + "pitch", e.target.value);
 // ---------- sources ----------
 function renderSources() {
   const S2 = DATA.sources || {};
-  const live = (k, paid) => { const s = S2[k]; if (!s) return ["Not set up", "t-plain"]; if (!s.ok && paid) return ["Add key", "t-p1"]; return [`Live · ${s.count}`, "t-ok"]; };
+  const live = (k, paid) => { const s = S2[k]; if (!s) return ["Not set up", "t-plain"]; if (!s.ok && paid) return ["Add keys", "t-p1"]; return [`Live · ${s.count}`, "t-ok"]; };
   const cards = [
-    ["Company careers pages", "Sales roles from the careers pages of every company on your watchlist, including big names on Workday. UK and remote roles only.", live("jobs"), S2.jobs],
+    ["Company careers pages", "Sales roles from the careers pages of every company on your watchlist, including big names on Workday. Roles abroad are kept but hidden unless you choose Everywhere.", live("jobs"), S2.jobs],
+    ["UK job boards", "SDR, BDR and AE roles at tech companies across Adzuna, Reed and Y Combinator, so you catch roles at companies you'd never think to check. Recruitment agency ads are filtered out.", live("sites", true), S2.sites],
     ["VC portfolio job boards", "Sales roles at startups backed by London VCs like Seedcamp, Balderton, LocalGlobe, Index and Atomico.", live("vc"), S2.vc],
     ["Funding news", "Fresh raises from Sifted, UKTN, TechCrunch, Tech.eu and Finextra. Crypto tokens and gambling are filtered out.", live("funding"), S2.funding],
     ["Apollo.io", "Finds the Head of Sales or SDR Manager at your best fit companies.", live("apollo", true), S2.apollo]
